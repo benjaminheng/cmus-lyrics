@@ -78,6 +78,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - headerHeight - footerHeight
+
+			// Reflow lyrics if window size changes
+			m.updateLyrics(m.lyrics)
 		}
 
 	case songInfoMsg:
@@ -87,7 +90,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.album = msg.album
 			m.title = msg.title
 			m.updateStatusBar()
-			m.viewport.SetContent("Loading...")
+
+			m.viewport.SetContent(m.centerText("Loading..."))
 
 			// Scroll back to top when song changes
 			m.viewport.GotoTop()
@@ -106,7 +110,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(msg.err.Error())
 		} else {
 			m.lyrics = msg.lyrics
-			m.viewport.SetContent(m.lyrics)
+			m.updateLyrics(m.lyrics)
 		}
 
 	case checkCmusTick:
@@ -183,6 +187,30 @@ func (m *model) updateStatusBar() {
 	}
 }
 
+func (m *model) updateLyrics(lyrics string) {
+	centeredLyrics := m.centerText(lyrics)
+	m.viewport.SetContent(centeredLyrics)
+}
+
+func (m *model) centerText(text string) string {
+	// Center each line of the lyrics
+	centeredLyrics := ""
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		// Use lipgloss to center each line within the viewport width
+		centeredLine := lipgloss.NewStyle().
+			Width(m.viewport.Width).
+			Align(lipgloss.Center).
+			Render(line)
+		centeredLyrics += centeredLine + "\n"
+	}
+	// Remove trailing newline
+	if len(centeredLyrics) > 0 {
+		centeredLyrics = centeredLyrics[:len(centeredLyrics)-1]
+	}
+	return centeredLyrics
+}
+
 // Message types for tea.Cmd
 type checkCmusTick time.Time
 
@@ -216,12 +244,6 @@ func parseCmusOutput(output string) (artist, album, title string) {
 		}
 	}
 	return
-}
-
-// fetchLyrics fetches lyrics from Genius API
-func (m *model) fetchLyrics(artist, title string) (string, error) {
-	ctx := context.Background()
-	return m.geniusAPIClient.GetLyrics(ctx, artist, title)
 }
 
 // generateSongID creates a unique identifier for a song
@@ -313,7 +335,7 @@ func main() {
 
 	initialModel := model{
 		statusBar:       "Loading...",
-		lyrics:          "Fetching current song information...",
+		lyrics:          "Loading...",
 		showHelpFooter:  *showHelpFooter,
 		geniusAPIClient: geniusAPIClient,
 	}
