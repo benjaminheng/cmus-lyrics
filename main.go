@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -15,15 +17,20 @@ import (
 
 // Model represents the application state
 type model struct {
-	viewport       viewport.Model
-	statusBar      string
-	artist         string
-	album          string
-	title          string
-	lyrics         string
-	ready          bool
-	lastChecked    time.Time
-	showHelpFooter bool
+	viewport        viewport.Model
+	showHelpFooter  bool
+	geniusAPIClient *GeniusAPIClient
+
+	statusBar   string
+	artist      string
+	album       string
+	title       string
+	lyrics      string
+	ready       bool
+	lastChecked time.Time
+
+	// Track if we've already fetched lyrics for the current song
+	currentSongID string
 }
 
 // Init initializes the Bubble Tea program
@@ -73,15 +80,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = msg.Height - headerHeight - footerHeight
 		}
 
-	case songUpdateMsg:
+	case songInfoMsg:
 		// Only update if song changed
-		if m.artist != msg.artist || m.title != msg.title || m.lyrics == "" {
+		if m.artist != msg.artist || m.title != msg.title {
 			m.artist = msg.artist
 			m.album = msg.album
 			m.title = msg.title
-			m.lyrics = msg.lyrics
 			m.updateStatusBar()
-			m.viewport.SetContent(m.lyrics)
+			m.viewport.SetContent("Loading...")
 
 			// Scroll back to top when song changes
 			m.viewport.GotoTop()
@@ -91,6 +97,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
 			return checkCmusTick{}
 		}))
+
+		// Schedule lyrics to be fetched asynchronously
+		cmds = append(cmds, fetchLyricsCmd(m.geniusAPIClient, m.artist, m.album, m.title))
+
+	case songLyricsMsg:
+		if msg.err != nil {
+			m.viewport.SetContent(msg.err.Error())
+		} else {
+			m.lyrics = msg.lyrics
+			m.viewport.SetContent(m.lyrics)
+		}
 
 	case checkCmusTick:
 		cmds = append(cmds, checkCmusCmd())
@@ -169,11 +186,21 @@ func (m *model) updateStatusBar() {
 // Message types for tea.Cmd
 type checkCmusTick time.Time
 
-type songUpdateMsg struct {
+// songInfoMsg contains just the song metadata, without lyrics
+type songInfoMsg struct {
+	artist string
+	album  string
+	title  string
+	err    error
+}
+
+// songLyricsMsg contains the song metadata and fetched lyrics
+type songLyricsMsg struct {
 	artist string
 	album  string
 	title  string
 	lyrics string
+	err    error
 }
 
 // Extract information from cmus-remote -Q output
@@ -191,88 +218,65 @@ func parseCmusOutput(output string) (artist, album, title string) {
 	return
 }
 
-// fetchLyrics attempts to fetch lyrics from azlyrics
-func fetchLyrics(artist, album, track string) (string, error) {
-	// This function will be implemented by the user
-	// For now, return a placeholder message with some multiline content to demonstrate scrolling
-	placeholder := fmt.Sprintf("Lyrics for %s - %s", artist, track)
-	if album != "" {
-		placeholder += fmt.Sprintf(" from the album %s", album)
-	}
-	placeholder += "\n\n"
-
-	// Add some dummy content to demonstrate scrolling with a more realistic lyrics format
-	verses := []string{
-		"This is the first verse of the song\nIt has multiple lines\nTo demonstrate how lyrics look\nIn this TUI application",
-		"This is the chorus of the song\nIt repeats several times\nAnd often has a catchy melody\nThat listeners will remember",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-		"This is the second verse of the song\nWith different lyrics than the first\nBut still following the same pattern\nAnd building on the song's theme",
-		"[Chorus repeats here]",
-		"This is the bridge section\nOften with a different feel\nBefore returning to the chorus\nOne last dramatic time",
-		"[Final chorus]\nSometimes with slight variations\nOr additional emphasis\nTo bring the song to closure",
-	}
-
-	for _, verse := range verses {
-		placeholder += verse + "\n\n"
-	}
-
-	return placeholder, nil
+// fetchLyrics fetches lyrics from Genius API
+func (m *model) fetchLyrics(artist, title string) (string, error) {
+	ctx := context.Background()
+	return m.geniusAPIClient.GetLyrics(ctx, artist, title)
 }
 
-// checkCmusCmd checks cmus status and updates the song if changed
+// generateSongID creates a unique identifier for a song
+func generateSongID(artist, title string) string {
+	return fmt.Sprintf("%s-%s", strings.ToLower(artist), strings.ToLower(title))
+}
+
+// fetchLyricsCmd is a command to fetch lyrics asynchronously
+func fetchLyricsCmd(client *GeniusAPIClient, artist, album, title string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		lyrics, err := client.GetLyrics(ctx, artist, title)
+		if err != nil {
+			return songLyricsMsg{
+				artist: artist,
+				album:  album,
+				title:  title,
+				lyrics: fmt.Sprintf("Error fetching lyrics: %v\n", err),
+				err:    err,
+			}
+		}
+
+		return songLyricsMsg{
+			artist: artist,
+			album:  album,
+			title:  title,
+			lyrics: lyrics,
+			err:    nil,
+		}
+	}
+}
+
+// checkCmusCmd checks cmus status and updates the song info if changed
 func checkCmusCmd() tea.Cmd {
 	return func() tea.Msg {
 		// Run cmus-remote -Q to get current song information
 		cmd := exec.Command("cmus-remote", "-Q")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return songUpdateMsg{
+			return songInfoMsg{
 				artist: "",
 				album:  "",
 				title:  "Error: cmus not running or not available",
-				lyrics: fmt.Sprintf("Error executing cmus-remote: %v\n", err),
+				err:    err,
 			}
 		}
 
 		// Check if cmus is playing something
 		outputStr := string(output)
 		if !regexp.MustCompile(`status (playing|paused)`).MatchString(outputStr) {
-			return songUpdateMsg{
+			return songInfoMsg{
 				artist: "",
 				album:  "",
 				title:  "No song playing",
-				lyrics: "No song is currently playing in cmus",
+				err:    nil,
 			}
 		}
 
@@ -280,30 +284,20 @@ func checkCmusCmd() tea.Cmd {
 		artist, album, title := parseCmusOutput(outputStr)
 
 		if artist == "" || title == "" {
-			return songUpdateMsg{
+			return songInfoMsg{
 				artist: "",
 				album:  "",
 				title:  "Unknown song",
-				lyrics: "Could not find artist or title information for the current song",
+				err:    fmt.Errorf("missing artist or title information"),
 			}
 		}
 
-		// Fetch lyrics
-		lyrics, err := fetchLyrics(artist, album, title)
-		if err != nil {
-			return songUpdateMsg{
-				artist: artist,
-				album:  album,
-				title:  title,
-				lyrics: fmt.Sprintf("Error fetching lyrics: %v\n", err),
-			}
-		}
-
-		return songUpdateMsg{
+		// Return the song info without fetching lyrics yet
+		return songInfoMsg{
 			artist: artist,
 			album:  album,
 			title:  title,
-			lyrics: lyrics,
+			err:    nil,
 		}
 	}
 }
@@ -315,10 +309,13 @@ func main() {
 	// Parse flags
 	flag.Parse()
 
+	geniusAPIClient := NewGeniusAPIClient(os.Getenv("GENIUS_ACCESS_TOKEN"))
+
 	initialModel := model{
-		statusBar:      "Loading...",
-		lyrics:         "Fetching current song information...",
-		showHelpFooter: *showHelpFooter,
+		statusBar:       "Loading...",
+		lyrics:          "Fetching current song information...",
+		showHelpFooter:  *showHelpFooter,
+		geniusAPIClient: geniusAPIClient,
 	}
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
