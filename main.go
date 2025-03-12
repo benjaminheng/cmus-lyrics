@@ -15,14 +15,14 @@ import (
 
 // Model represents the application state
 type model struct {
-	viewport      viewport.Model
-	statusBar     string
-	artist        string
-	album         string
-	title         string
-	lyrics        string
-	ready         bool
-	lastChecked   time.Time
+	viewport       viewport.Model
+	statusBar      string
+	artist         string
+	album          string
+	title          string
+	lyrics         string
+	ready          bool
+	lastChecked    time.Time
 	showHelpFooter bool
 }
 
@@ -114,34 +114,34 @@ func (m model) View() string {
 		Bold(true).
 		Width(m.viewport.Width).
 		Padding(0, 1)
-		
+
 	// Render the status bar
 	statusBar := statusBarStyle.Render(m.statusBar)
-	
+
 	// Calculate scroll percentage
 	scrollPercent := 0
 	if m.viewport.ScrollPercent() >= 0 {
 		scrollPercent = int(m.viewport.ScrollPercent() * 100)
 	}
-	
+
 	var footer string
 	if m.showHelpFooter {
 		// Help text with keybindings
 		helpStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#626262"))
-	
+
 		helpText := "j/k: scroll • g/G: top/bottom • C-d/C-u: page down/up • r: refresh • q: quit"
-		
+
 		// Show both help text and percentage
 		percentStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#626262")).
 			Bold(true)
-		
+
 		// Join help text with percentage
 		footer = lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			helpStyle.Render(helpText),
-			lipgloss.NewStyle().Width(m.viewport.Width - lipgloss.Width(helpText) - 4).Render(""),
+			lipgloss.NewStyle().Width(m.viewport.Width-lipgloss.Width(helpText)-4).Render(""),
 			percentStyle.Render(fmt.Sprintf("%3d%%", scrollPercent)),
 		)
 	} else {
@@ -151,7 +151,7 @@ func (m model) View() string {
 			Bold(true).
 			Width(m.viewport.Width).
 			Align(lipgloss.Right)
-		
+
 		footer = percentStyle.Render(fmt.Sprintf("%3d%%", scrollPercent))
 	}
 
@@ -160,7 +160,7 @@ func (m model) View() string {
 
 func (m *model) updateStatusBar() {
 	if m.album != "" {
-		m.statusBar = fmt.Sprintf("%s - %s [%s]", m.artist, m.title, m.album)
+		m.statusBar = fmt.Sprintf("%s - %s - %s", m.artist, m.album, m.title)
 	} else {
 		m.statusBar = fmt.Sprintf("%s - %s", m.artist, m.title)
 	}
@@ -311,13 +311,13 @@ func checkCmusCmd() tea.Cmd {
 func main() {
 	// Define command line flags
 	showHelpFooter := flag.Bool("show-help-footer", false, "Show keybinding help text in the footer")
-	
+
 	// Parse flags
 	flag.Parse()
-	
+
 	initialModel := model{
-		statusBar:     "Loading...",
-		lyrics:        "Fetching current song information...",
+		statusBar:      "Loading...",
+		lyrics:         "Fetching current song information...",
 		showHelpFooter: *showHelpFooter,
 	}
 
