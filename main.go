@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
+	"log"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -331,7 +331,13 @@ func main() {
 	// Parse flags
 	flag.Parse()
 
-	geniusAPIClient := NewGeniusAPIClient(os.Getenv("GENIUS_ACCESS_TOKEN"))
+	// Load configuration
+	config, err := LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	geniusAPIClient := NewGeniusAPIClient(config.GeniusAccessToken)
 
 	initialModel := model{
 		statusBar:       "Loading...",
@@ -342,6 +348,6 @@ func main() {
 
 	p := tea.NewProgram(initialModel, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error running program: %v\n", err)
+		log.Fatal(err)
 	}
 }
