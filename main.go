@@ -327,6 +327,7 @@ func checkCmusCmd() tea.Cmd {
 func main() {
 	// Define command line flags
 	showHelpFooter := flag.Bool("show-help-footer", false, "Show keybinding help text in the footer")
+	singleQuery := flag.String("query", "", "Do a one-off query for lyrics and print to stdout. For best results, query \"<artist> <track>\".")
 
 	// Parse flags
 	flag.Parse()
@@ -336,18 +337,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	geniusAPIClient := NewGeniusAPIClient(config.GeniusAccessToken)
 
-	initialModel := model{
-		statusBar:       "Loading...",
-		lyrics:          "Loading...",
-		showHelpFooter:  *showHelpFooter,
-		geniusAPIClient: geniusAPIClient,
-	}
+	if *singleQuery != "" {
+		lyrics, err := geniusAPIClient.GetLyrics(context.Background(), *singleQuery, "")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(lyrics)
+	} else {
+		initialModel := model{
+			statusBar:       "Loading...",
+			lyrics:          "Loading...",
+			showHelpFooter:  *showHelpFooter,
+			geniusAPIClient: geniusAPIClient,
+		}
 
-	p := tea.NewProgram(initialModel, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
+		p := tea.NewProgram(initialModel, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
