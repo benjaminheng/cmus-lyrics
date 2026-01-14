@@ -146,6 +146,9 @@ func (c *GeniusAPIClient) getLyrics(ctx context.Context, path string) (string, e
 	// Find the lyrics container by data attribute and class prefix
 	var lyricsText strings.Builder
 	doc.Find("[data-lyrics-container=\"true\"]").Each(func(i int, s *goquery.Selection) {
+		// Remove elements that should be excluded from selection
+		s.Find("[data-exclude-from-selection=\"true\"]").Remove()
+
 		// Get the HTML content and append to our builder
 		html, err := s.Html()
 		if err != nil {
