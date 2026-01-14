@@ -27,7 +27,7 @@ func getConfigPath() (string, error) {
 	}
 
 	// Create app config directory if it doesn't exist
-	appConfigDir := filepath.Join(configHome, "cmus-lyrics")
+	appConfigDir := filepath.Join(configHome, "lyrics")
 	if err := os.MkdirAll(appConfigDir, 0755); err != nil {
 		return "", errors.Wrap(err, "create config directory")
 	}

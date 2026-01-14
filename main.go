@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -324,38 +325,105 @@ func checkCmusCmd() tea.Cmd {
 	}
 }
 
+func printUsage() {
+	usage := `lyrics - Fetch and display song lyrics
+
+Usage:
+  lyrics <command> [arguments]
+
+Commands:
+  cmus              Launch interactive TUI with cmus integration
+  query <query>     Fetch lyrics for a query and print to stdout
+  q <query>         Shorthand for 'query'
+
+Flags (for cmus command):
+  --show-help-footer    Show keybinding help text in the footer
+
+Examples:
+  lyrics cmus
+  lyrics cmus --show-help-footer
+  lyrics query "black sabbath paranoid"
+  lyrics q "artist song title"
+`
+	fmt.Print(usage)
+}
+
+func runCmusCommand(config Config, args []string) {
+	// Create FlagSet for cmus-specific flags
+	cmusFlags := flag.NewFlagSet("cmus", flag.ExitOnError)
+	showHelpFooter := cmusFlags.Bool("show-help-footer", false, "Show keybinding help text in the footer")
+
+	if err := cmusFlags.Parse(args); err != nil {
+		log.Fatal(err)
+	}
+
+	geniusAPIClient := NewGeniusAPIClient(config.GeniusAccessToken)
+
+	initialModel := model{
+		statusBar:       "Loading...",
+		lyrics:          "Loading...",
+		showHelpFooter:  *showHelpFooter,
+		geniusAPIClient: geniusAPIClient,
+	}
+
+	p := tea.NewProgram(initialModel, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runQueryCommand(config Config, args []string) {
+	// Create FlagSet (no flags currently, but structure for future)
+	queryFlags := flag.NewFlagSet("query", flag.ExitOnError)
+
+	if err := queryFlags.Parse(args); err != nil {
+		log.Fatal(err)
+	}
+
+	// Get query from remaining args
+	remainingArgs := queryFlags.Args()
+	if len(remainingArgs) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: query argument required")
+		fmt.Fprintln(os.Stderr, "\nUsage: lyrics query <query>")
+		os.Exit(1)
+	}
+
+	query := strings.Join(remainingArgs, " ")
+
+	geniusAPIClient := NewGeniusAPIClient(config.GeniusAccessToken)
+
+	lyrics, err := geniusAPIClient.GetLyrics(context.Background(), query, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(lyrics)
+}
+
 func main() {
-	// Define command line flags
-	showHelpFooter := flag.Bool("show-help-footer", false, "Show keybinding help text in the footer")
-	singleQuery := flag.String("query", "", "Do a one-off query for lyrics and print to stdout. For best results, query \"<artist> <track>\".")
-
-	// Parse flags
-	flag.Parse()
-
 	// Load configuration
 	config, err := LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
-	geniusAPIClient := NewGeniusAPIClient(config.GeniusAccessToken)
 
-	if *singleQuery != "" {
-		lyrics, err := geniusAPIClient.GetLyrics(context.Background(), *singleQuery, "")
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(lyrics)
-	} else {
-		initialModel := model{
-			statusBar:       "Loading...",
-			lyrics:          "Loading...",
-			showHelpFooter:  *showHelpFooter,
-			geniusAPIClient: geniusAPIClient,
-		}
+	// Check for subcommand
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(0)
+	}
 
-		p := tea.NewProgram(initialModel, tea.WithAltScreen())
-		if _, err := p.Run(); err != nil {
-			log.Fatal(err)
-		}
+	// Route to command
+	cmdName := os.Args[1]
+	cmdArgs := os.Args[2:]
+
+	switch cmdName {
+	case "cmus":
+		runCmusCommand(config, cmdArgs)
+	case "query", "q":
+		runQueryCommand(config, cmdArgs)
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown command %q\n\n", cmdName)
+		printUsage()
+		os.Exit(1)
 	}
 }

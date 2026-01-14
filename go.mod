@@ -1,4 +1,4 @@
-module github.com/benjaminheng/cmus-lyrics
+module github.com/benjaminheng/lyrics
 
 go 1.24.1
 
